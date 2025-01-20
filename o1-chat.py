@@ -16,25 +16,22 @@ load_dotenv()
 
 class ChatSystem:
     def __init__(self):
-        # Initialize TinyDB
-        self.db = TinyDB('chat_database.json')
-        self.chats_table = self.db.table('chats')
-        self.messages_table = self.db.table('messages')
-        self.tools_table = self.db.table('tools')  # New table for tools
+        """Initialize the chat system with Azure OpenAI credentials."""
+        # Load environment variables
+        load_dotenv()
         
-        # Initialize credentials for both models
-        self.o1_endpoint = os.getenv("AZURE_OPENAI_O1_ENDPOINT")
+        # Initialize API credentials
         self.o1_api_key = os.getenv("AZURE_OPENAI_O1_API_KEY")
-        self.o1_deployment = os.getenv("AZURE_OPENAI_O1_DEPLOYMENT")
+        self.o1_endpoint = os.getenv("AZURE_OPENAI_O1_ENDPOINT")
+        self.o1_deployment = os.getenv("AZURE_OPENAI_O1_DEPLOYMENT", "o1")
         
-        self.o1_mini_endpoint = os.getenv("AZURE_OPENAI_O1_MINI_ENDPOINT")
         self.o1_mini_api_key = os.getenv("AZURE_OPENAI_O1_MINI_API_KEY")
-        self.o1_mini_deployment = os.getenv("AZURE_OPENAI_O1_MINI_DEPLOYMENT")
+        self.o1_mini_endpoint = os.getenv("AZURE_OPENAI_O1_MINI_ENDPOINT")
+        self.o1_mini_deployment = os.getenv("AZURE_OPENAI_O1_MINI_DEPLOYMENT", "o1-mini")
         
-        # Get API version (now using 2024-12-01-preview)
         self.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
         
-        # Default to "o1" settings (changed from o1_preview)
+        # Default to "o1" settings
         self.set_credentials("o1")
         
         # Initialize feature flags
@@ -43,6 +40,12 @@ class ChatSystem:
         self.current_schema = None
         self.function_calling_enabled = False
         self.available_functions = {}
+        
+        # Initialize database
+        self.db = TinyDB('chat_database.json')
+        self.chats_table = self.db.table('chats')
+        self.messages_table = self.db.table('messages')
+        self.tools_table = self.db.table('tools')  # New table for tools
         
         # Load saved tools
         self.load_saved_tools()
