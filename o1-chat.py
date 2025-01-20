@@ -55,15 +55,19 @@ class ChatSystem:
         if model_choice == "o1":
             self.client = AzureOpenAI(
                 api_key=self.o1_api_key,
-                azure_endpoint=self.o1_endpoint,
-                api_version=self.api_version
+                api_base=self.o1_endpoint,
+                api_version=self.api_version,
+                api_type="azure",
+                api_timeout=30.0
             )
             self.deployment = self.o1_deployment
         else:  # o1_mini
             self.client = AzureOpenAI(
                 api_key=self.o1_mini_api_key,
-                azure_endpoint=self.o1_mini_endpoint,
-                api_version=self.api_version
+                api_base=self.o1_mini_endpoint,
+                api_version=self.api_version,
+                api_type="azure",
+                api_timeout=30.0
             )
             self.deployment = self.o1_mini_deployment
         
@@ -189,7 +193,7 @@ class ChatSystem:
             # Prepare API call parameters
             api_params = {
                 "messages": formatted_messages,
-                "model": self.deployment,
+                "deployment_id": self.deployment,
                 "max_tokens": max_completion_tokens,
                 "temperature": temperature,
                 "top_p": top_p,
