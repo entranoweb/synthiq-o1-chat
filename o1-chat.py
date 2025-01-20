@@ -27,7 +27,7 @@ class ChatSystem:
             self.o1_mini_endpoint = st.secrets.get("AZURE_OPENAI_O1_MINI_ENDPOINT", "")
             self.o1_mini_deployment = st.secrets.get("AZURE_OPENAI_O1_MINI_DEPLOYMENT", "")
             
-            self.api_version = st.secrets.get("AZURE_OPENAI_API_VERSION", "2024-02-15")
+            self.api_version = st.secrets.get("AZURE_OPENAI_API_VERSION", "2024-02-01")  # Latest stable version
         except Exception as e:
             st.error("Error loading credentials from Streamlit secrets. Please check your configuration.")
             st.error(f"Error details: {str(e)}")
@@ -69,18 +69,16 @@ class ChatSystem:
         try:
             if model_choice == "o1":
                 self.client = AzureOpenAI(
+                    azure_endpoint=self.o1_endpoint,
                     api_key=self.o1_api_key,
-                    api_base=self.o1_endpoint,
-                    api_version=self.api_version,
-                    api_type="azure"
+                    api_version=self.api_version
                 )
                 self.deployment = self.o1_deployment
             elif model_choice == "o1_mini" and all([self.o1_mini_api_key, self.o1_mini_endpoint, self.o1_mini_deployment]):
                 self.client = AzureOpenAI(
+                    azure_endpoint=self.o1_mini_endpoint,
                     api_key=self.o1_mini_api_key,
-                    api_base=self.o1_mini_endpoint,
-                    api_version=self.api_version,
-                    api_type="azure"
+                    api_version=self.api_version
                 )
                 self.deployment = self.o1_mini_deployment
             else:
@@ -208,17 +206,12 @@ class ChatSystem:
             # Prepare API call parameters
             api_params = {
                 "messages": formatted_messages,
-                "deployment_id": self.deployment,
+                "model": self.deployment,
                 "max_tokens": max_completion_tokens,
                 "temperature": temperature,
                 "top_p": top_p,
                 "stream": True
             }
-            
-            # Add reasoning effort for o1 model
-            if model_name == "o1":
-                reasoning_effort = st.session_state.get("reasoning_effort", "high")
-                api_params["reasoning_effort"] = reasoning_effort
 
             response = self.client.chat.completions.create(**api_params)
             return response
