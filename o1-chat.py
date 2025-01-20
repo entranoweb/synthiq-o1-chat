@@ -55,19 +55,15 @@ class ChatSystem:
         if model_choice == "o1":
             self.client = AzureOpenAI(
                 api_key=self.o1_api_key,
-                api_version=self.api_version,
                 azure_endpoint=self.o1_endpoint,
-                azure_deployment=self.o1_deployment,
-                timeout=30.0
+                api_version=self.api_version
             )
             self.deployment = self.o1_deployment
         else:  # o1_mini
             self.client = AzureOpenAI(
                 api_key=self.o1_mini_api_key,
-                api_version=self.api_version,
                 azure_endpoint=self.o1_mini_endpoint,
-                azure_deployment=self.o1_mini_deployment,
-                timeout=30.0
+                api_version=self.api_version
             )
             self.deployment = self.o1_mini_deployment
         
@@ -172,13 +168,7 @@ class ChatSystem:
         max_completion_tokens: int, 
         model_name: str
     ) -> str:
-        """
-        Updated to handle:
-        - Vision messages
-        - Structured output
-        - Function calling
-        - Developer role for system messages
-        """
+        """Stream chat completion from Azure OpenAI."""
         try:
             # Set credentials based on model
             if model_name == self.o1_deployment:
@@ -196,84 +186,38 @@ class ChatSystem:
                 else:
                     formatted_messages.append(msg)
             
-            try:
-                # Prepare API call parameters
-                api_params = {
-                    "messages": formatted_messages,
-                    "model": self.deployment,
-                    "max_completion_tokens": max_completion_tokens,
-                }
-                
-                # Add model-specific parameters
-                if model_name == self.o1_deployment:
-                    reasoning_effort = st.session_state.get("reasoning_effort", "high")
-                    api_params["reasoning_effort"] = reasoning_effort
-                    
-                    # Add structured output if enabled
-                    if self.structured_output_enabled and self.current_schema:
-                        api_params["response_format"] = {
-                            "type": "json_schema",
-                            "schema": self.current_schema
-                        }
-                    
-                    # Add function calling if enabled
-                    if self.function_calling_enabled and self.available_functions:
-                        api_params["tools"] = self.get_function_definitions()
-                        api_params["tool_choice"] = "auto"
-                else:
-                    api_params.update({
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "max_tokens": max_completion_tokens
-                    })
-                
-                # Make API call
-                response = self.client.chat.completions.create(**api_params)
-                
-                # Handle function calling response
-                if (
-                    self.function_calling_enabled 
-                    and hasattr(response.choices[0].message, 'tool_calls')
-                    and response.choices[0].message.tool_calls
-                ):
-                    tool_calls = response.choices[0].message.tool_calls
-                    results = []
-                    for tool_call in tool_calls:
-                        if tool_call.type == "function":
-                            result = self.handle_function_call(tool_call.function)
-                            results.append(result)
-                    
-                    content = "\n".join(results)
-                else:
-                    content = response.choices[0].message.content
-                
-                # Update token usage
-                if hasattr(response, 'usage'):
-                    st.session_state.token_usage += response.usage.total_tokens
-                
-                # Handle structured output display
-                if self.structured_output_enabled:
-                    try:
-                        json_content = json.loads(content)
-                        st.json(json_content)
-                    except json.JSONDecodeError:
-                        st.error("Failed to parse structured output as JSON")
-                        st.markdown(content, unsafe_allow_html=True)
-                else:
-                    st.markdown(content, unsafe_allow_html=True)
-                
-                return content
-                
-            except Exception as e:
-                st.error(f"API call failed: {str(e)}")
-                return "I apologize, but I encountered an error while trying to respond. Please try again."
+            # Prepare API call parameters
+            api_params = {
+                "messages": formatted_messages,
+                "model": self.deployment,
+                "max_tokens": max_completion_tokens,
+                "temperature": temperature,
+                "top_p": top_p,
+                "stream": True
+            }
             
+            # Add model-specific parameters
+            if model_name == self.o1_deployment:
+                reasoning_effort = st.session_state.get("reasoning_effort", "high")
+                api_params["reasoning_effort"] = reasoning_effort
+                
+                # Add structured output if enabled
+                if self.structured_output_enabled and self.current_schema:
+                    api_params["response_format"] = {
+                        "type": "json_schema",
+                        "schema": self.current_schema
+                    }
+                
+                # Add function calling if enabled
+                if self.function_calling_enabled and self.available_functions:
+                    api_params["tools"] = self.get_function_definitions()
+                    api_params["tool_choice"] = "auto"
+
+            response = self.client.chat.completions.create(**api_params)
+            return response
         except Exception as e:
-            st.error(f"Critical error: {str(e)}")
-            st.error("Full error details for debugging:")
-            st.error(f"Model: {self.deployment}")
-            st.error(f"API Version: {self.api_version}")
-            return "A critical error occurred. Please check your configuration and try again."
+            st.error(f"Error: {str(e)}")
+            return None
 
     def process_audio(self, audio_file) -> Optional[str]:
         """Process uploaded audio file using Azure OpenAI's Whisper API."""
