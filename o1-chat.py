@@ -17,21 +17,23 @@ load_dotenv()
 class ChatSystem:
     def __init__(self):
         """Initialize the chat system with Azure OpenAI credentials."""
-        # Load environment variables from .env or Streamlit secrets
-        load_dotenv()  # Load from .env if available
+        # Initialize API credentials from Streamlit secrets
+        try:
+            self.o1_api_key = st.secrets["AZURE_OPENAI_O1_API_KEY"]
+            self.o1_endpoint = st.secrets["AZURE_OPENAI_O1_ENDPOINT"]
+            self.o1_deployment = st.secrets["AZURE_OPENAI_O1_DEPLOYMENT"]
+            
+            self.o1_mini_api_key = st.secrets.get("AZURE_OPENAI_O1_MINI_API_KEY", "")
+            self.o1_mini_endpoint = st.secrets.get("AZURE_OPENAI_O1_MINI_ENDPOINT", "")
+            self.o1_mini_deployment = st.secrets.get("AZURE_OPENAI_O1_MINI_DEPLOYMENT", "")
+            
+            self.api_version = st.secrets.get("AZURE_OPENAI_API_VERSION", "2024-02-15")
+        except Exception as e:
+            st.error("Error loading credentials from Streamlit secrets. Please check your configuration.")
+            st.error(f"Error details: {str(e)}")
+            st.stop()
         
-        # Initialize API credentials (prioritize Streamlit secrets over .env)
-        self.o1_api_key = st.secrets.get("AZURE_OPENAI_O1_API_KEY", os.getenv("AZURE_OPENAI_O1_API_KEY"))
-        self.o1_endpoint = st.secrets.get("AZURE_OPENAI_O1_ENDPOINT", os.getenv("AZURE_OPENAI_O1_ENDPOINT"))
-        self.o1_deployment = st.secrets.get("AZURE_OPENAI_O1_DEPLOYMENT", os.getenv("AZURE_OPENAI_O1_DEPLOYMENT", "o1"))
-        
-        self.o1_mini_api_key = st.secrets.get("AZURE_OPENAI_O1_MINI_API_KEY", os.getenv("AZURE_OPENAI_O1_MINI_API_KEY"))
-        self.o1_mini_endpoint = st.secrets.get("AZURE_OPENAI_O1_MINI_ENDPOINT", os.getenv("AZURE_OPENAI_O1_MINI_ENDPOINT"))
-        self.o1_mini_deployment = st.secrets.get("AZURE_OPENAI_O1_MINI_DEPLOYMENT", os.getenv("AZURE_OPENAI_O1_MINI_DEPLOYMENT", "o1-mini"))
-        
-        self.api_version = st.secrets.get("AZURE_OPENAI_API_VERSION", os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15"))
-        
-        # Validate credentials
+        # Validate primary credentials
         if not all([self.o1_api_key, self.o1_endpoint, self.o1_deployment]):
             st.error("Missing required Azure OpenAI credentials. Please check your configuration.")
             st.stop()
@@ -46,33 +48,44 @@ class ChatSystem:
         self.function_calling_enabled = False
         self.available_functions = {}
         
-        # Initialize database with a relative path
-        db_path = os.path.join(os.path.dirname(__file__), 'chat_database.json')
-        self.db = TinyDB(db_path)
-        self.chats_table = self.db.table('chats')
-        self.messages_table = self.db.table('messages')
-        self.tools_table = self.db.table('tools')
-        
-        # Load saved tools
-        self.load_saved_tools()
+        try:
+            # Initialize database with a relative path
+            db_dir = os.path.join(os.path.dirname(__file__), 'data')
+            os.makedirs(db_dir, exist_ok=True)
+            db_path = os.path.join(db_dir, 'chat_database.json')
+            self.db = TinyDB(db_path)
+            self.chats_table = self.db.table('chats')
+            self.messages_table = self.db.table('messages')
+            self.tools_table = self.db.table('tools')
+        except Exception as e:
+            st.warning(f"Could not initialize database: {str(e)}. Using in-memory storage.")
+            self.db = TinyDB(storage=MemoryStorage)
+            self.chats_table = self.db.table('chats')
+            self.messages_table = self.db.table('messages')
+            self.tools_table = self.db.table('tools')
 
     def set_credentials(self, model_choice: str):
         """Set the appropriate credentials based on model choice."""
         try:
             if model_choice == "o1":
                 self.client = AzureOpenAI(
-                    azure_endpoint=self.o1_endpoint,
                     api_key=self.o1_api_key,
-                    api_version=self.api_version
+                    api_base=self.o1_endpoint,
+                    api_version=self.api_version,
+                    api_type="azure"
                 )
                 self.deployment = self.o1_deployment
-            else:  # o1_mini
+            elif model_choice == "o1_mini" and all([self.o1_mini_api_key, self.o1_mini_endpoint, self.o1_mini_deployment]):
                 self.client = AzureOpenAI(
-                    azure_endpoint=self.o1_mini_endpoint,
                     api_key=self.o1_mini_api_key,
-                    api_version=self.api_version
+                    api_base=self.o1_mini_endpoint,
+                    api_version=self.api_version,
+                    api_type="azure"
                 )
                 self.deployment = self.o1_mini_deployment
+            else:
+                st.error(f"Invalid model choice or missing credentials for {model_choice}")
+                st.stop()
             
             self.model_name = model_choice
         except Exception as e:
@@ -81,18 +94,18 @@ class ChatSystem:
 
     @staticmethod
     def init_session_state():
+        """Initialize Streamlit session state with default values."""
         defaults = {
             "messages": [],
             "system_prompt": "You are a helpful assistant.",
-            "model_name": os.getenv("AZURE_OPENAI_O1_DEPLOYMENT"),
+            "model_name": "o1",
             "thinking": False,
             "token_usage": 0,
-            "perplexity_api_key": os.getenv("PERPLEXITY_API_KEY"),
             "current_chat": "New Chat",
-            "chat_sessions": {}
+            "chat_sessions": {},
+            "reasoning_effort": "high"
         }
         
-        # Initialize session state
         for key, value in defaults.items():
             if key not in st.session_state:
                 st.session_state[key] = value
@@ -177,17 +190,13 @@ class ChatSystem:
         top_p: float, 
         max_completion_tokens: int, 
         model_name: str
-    ) -> str:
+    ) -> Optional[str]:
         """Stream chat completion from Azure OpenAI."""
         try:
             # Set credentials based on model
-            if model_name == self.o1_deployment:
-                self.set_credentials("o1")
-            else:
-                self.set_credentials("o1_mini")
+            if model_name != self.model_name:
+                self.set_credentials(model_name)
             
-            st.info(f"Using model: {self.deployment}")
-
             # Convert system role to developer for o1
             formatted_messages = []
             for msg in messages:
@@ -199,29 +208,17 @@ class ChatSystem:
             # Prepare API call parameters
             api_params = {
                 "messages": formatted_messages,
-                "model": self.deployment,
+                "deployment_id": self.deployment,
                 "max_tokens": max_completion_tokens,
                 "temperature": temperature,
                 "top_p": top_p,
                 "stream": True
             }
             
-            # Add model-specific parameters
-            if model_name == self.o1_deployment:
+            # Add reasoning effort for o1 model
+            if model_name == "o1":
                 reasoning_effort = st.session_state.get("reasoning_effort", "high")
                 api_params["reasoning_effort"] = reasoning_effort
-                
-                # Add structured output if enabled
-                if self.structured_output_enabled and self.current_schema:
-                    api_params["response_format"] = {
-                        "type": "json_schema",
-                        "schema": self.current_schema
-                    }
-                
-                # Add function calling if enabled
-                if self.function_calling_enabled and self.available_functions:
-                    api_params["tools"] = self.get_function_definitions()
-                    api_params["tool_choice"] = "auto"
 
             response = self.client.chat.completions.create(**api_params)
             return response
