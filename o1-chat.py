@@ -17,19 +17,24 @@ load_dotenv()
 class ChatSystem:
     def __init__(self):
         """Initialize the chat system with Azure OpenAI credentials."""
-        # Load environment variables
-        load_dotenv()
+        # Load environment variables from .env or Streamlit secrets
+        load_dotenv()  # Load from .env if available
         
-        # Initialize API credentials
-        self.o1_api_key = os.getenv("AZURE_OPENAI_O1_API_KEY")
-        self.o1_endpoint = os.getenv("AZURE_OPENAI_O1_ENDPOINT")
-        self.o1_deployment = os.getenv("AZURE_OPENAI_O1_DEPLOYMENT", "o1")
+        # Initialize API credentials (prioritize Streamlit secrets over .env)
+        self.o1_api_key = st.secrets.get("AZURE_OPENAI_O1_API_KEY", os.getenv("AZURE_OPENAI_O1_API_KEY"))
+        self.o1_endpoint = st.secrets.get("AZURE_OPENAI_O1_ENDPOINT", os.getenv("AZURE_OPENAI_O1_ENDPOINT"))
+        self.o1_deployment = st.secrets.get("AZURE_OPENAI_O1_DEPLOYMENT", os.getenv("AZURE_OPENAI_O1_DEPLOYMENT", "o1"))
         
-        self.o1_mini_api_key = os.getenv("AZURE_OPENAI_O1_MINI_API_KEY")
-        self.o1_mini_endpoint = os.getenv("AZURE_OPENAI_O1_MINI_ENDPOINT")
-        self.o1_mini_deployment = os.getenv("AZURE_OPENAI_O1_MINI_DEPLOYMENT", "o1-mini")
+        self.o1_mini_api_key = st.secrets.get("AZURE_OPENAI_O1_MINI_API_KEY", os.getenv("AZURE_OPENAI_O1_MINI_API_KEY"))
+        self.o1_mini_endpoint = st.secrets.get("AZURE_OPENAI_O1_MINI_ENDPOINT", os.getenv("AZURE_OPENAI_O1_MINI_ENDPOINT"))
+        self.o1_mini_deployment = st.secrets.get("AZURE_OPENAI_O1_MINI_DEPLOYMENT", os.getenv("AZURE_OPENAI_O1_MINI_DEPLOYMENT", "o1-mini"))
         
-        self.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
+        self.api_version = st.secrets.get("AZURE_OPENAI_API_VERSION", os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15"))
+        
+        # Validate credentials
+        if not all([self.o1_api_key, self.o1_endpoint, self.o1_deployment]):
+            st.error("Missing required Azure OpenAI credentials. Please check your configuration.")
+            st.stop()
         
         # Default to "o1" settings
         self.set_credentials("o1")
@@ -41,35 +46,38 @@ class ChatSystem:
         self.function_calling_enabled = False
         self.available_functions = {}
         
-        # Initialize database
-        self.db = TinyDB('chat_database.json')
+        # Initialize database with a relative path
+        db_path = os.path.join(os.path.dirname(__file__), 'chat_database.json')
+        self.db = TinyDB(db_path)
         self.chats_table = self.db.table('chats')
         self.messages_table = self.db.table('messages')
-        self.tools_table = self.db.table('tools')  # New table for tools
+        self.tools_table = self.db.table('tools')
         
         # Load saved tools
         self.load_saved_tools()
 
     def set_credentials(self, model_choice: str):
         """Set the appropriate credentials based on model choice."""
-        if model_choice == "o1":
-            self.client = AzureOpenAI(
-                azure_endpoint=self.o1_endpoint,
-                api_key=self.o1_api_key,
-                api_version=self.api_version,
-                timeout=30.0
-            )
-            self.deployment = self.o1_deployment
-        else:  # o1_mini
-            self.client = AzureOpenAI(
-                azure_endpoint=self.o1_mini_endpoint,
-                api_key=self.o1_mini_api_key,
-                api_version=self.api_version,
-                timeout=30.0
-            )
-            self.deployment = self.o1_mini_deployment
-        
-        self.model_name = model_choice
+        try:
+            if model_choice == "o1":
+                self.client = AzureOpenAI(
+                    azure_endpoint=self.o1_endpoint,
+                    api_key=self.o1_api_key,
+                    api_version=self.api_version
+                )
+                self.deployment = self.o1_deployment
+            else:  # o1_mini
+                self.client = AzureOpenAI(
+                    azure_endpoint=self.o1_mini_endpoint,
+                    api_key=self.o1_mini_api_key,
+                    api_version=self.api_version
+                )
+                self.deployment = self.o1_mini_deployment
+            
+            self.model_name = model_choice
+        except Exception as e:
+            st.error(f"Error initializing Azure OpenAI client: {str(e)}")
+            st.stop()
 
     @staticmethod
     def init_session_state():
@@ -198,27 +206,15 @@ class ChatSystem:
                 "stream": True
             }
             
-            # Add model-specific parameters
+            # Add model-specific parameters for O1
             if model_name == self.o1_deployment:
                 reasoning_effort = st.session_state.get("reasoning_effort", "high")
                 api_params["reasoning_effort"] = reasoning_effort
-                
-                # Add structured output if enabled
-                if self.structured_output_enabled and self.current_schema:
-                    api_params["response_format"] = {
-                        "type": "json_schema",
-                        "schema": self.current_schema
-                    }
-                
-                # Add function calling if enabled
-                if self.function_calling_enabled and self.available_functions:
-                    api_params["tools"] = self.get_function_definitions()
-                    api_params["tool_choice"] = "auto"
 
             response = self.client.chat.completions.create(**api_params)
             return response
         except Exception as e:
-            st.error(f"Error: {str(e)}")
+            st.error(f"Error in chat completion: {str(e)}")
             return None
 
     def process_audio(self, audio_file) -> Optional[str]:
