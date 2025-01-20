@@ -1,0 +1,16 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "You are a helpful assistant who is kind, factual, and concise.\n\nUser: hello"
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! How can I assist you today?"
+    }
+  ],
+  "system_prompt": "You are a helpful assistant who is kind, factual, and concise.",
+  "model_name": "o1-preview",
+  "token_usage": 309,
+  "timestamp": "2024-12-16 00:18:04"
+}
