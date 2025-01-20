@@ -29,7 +29,7 @@ class ChatSystem:
         self.o1_mini_endpoint = os.getenv("AZURE_OPENAI_O1_MINI_ENDPOINT")
         self.o1_mini_deployment = os.getenv("AZURE_OPENAI_O1_MINI_DEPLOYMENT", "o1-mini")
         
-        self.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+        self.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
         
         # Default to "o1" settings
         self.set_credentials("o1")
@@ -54,20 +54,18 @@ class ChatSystem:
         """Set the appropriate credentials based on model choice."""
         if model_choice == "o1":
             self.client = AzureOpenAI(
+                azure_endpoint=self.o1_endpoint,
                 api_key=self.o1_api_key,
-                api_base=self.o1_endpoint,
                 api_version=self.api_version,
-                api_type="azure",
-                api_timeout=30.0
+                timeout=30.0
             )
             self.deployment = self.o1_deployment
         else:  # o1_mini
             self.client = AzureOpenAI(
+                azure_endpoint=self.o1_mini_endpoint,
                 api_key=self.o1_mini_api_key,
-                api_base=self.o1_mini_endpoint,
                 api_version=self.api_version,
-                api_type="azure",
-                api_timeout=30.0
+                timeout=30.0
             )
             self.deployment = self.o1_mini_deployment
         
@@ -193,7 +191,7 @@ class ChatSystem:
             # Prepare API call parameters
             api_params = {
                 "messages": formatted_messages,
-                "deployment_id": self.deployment,
+                "model": self.deployment,
                 "max_tokens": max_completion_tokens,
                 "temperature": temperature,
                 "top_p": top_p,
