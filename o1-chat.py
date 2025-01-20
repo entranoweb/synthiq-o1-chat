@@ -56,14 +56,18 @@ class ChatSystem:
             self.client = AzureOpenAI(
                 api_key=self.o1_api_key,
                 api_version=self.api_version,
-                azure_endpoint=self.o1_endpoint
+                azure_endpoint=self.o1_endpoint,
+                azure_deployment=self.o1_deployment,
+                timeout=30.0
             )
             self.deployment = self.o1_deployment
         else:  # o1_mini
             self.client = AzureOpenAI(
                 api_key=self.o1_mini_api_key,
                 api_version=self.api_version,
-                azure_endpoint=self.o1_mini_endpoint
+                azure_endpoint=self.o1_mini_endpoint,
+                azure_deployment=self.o1_mini_deployment,
+                timeout=30.0
             )
             self.deployment = self.o1_mini_deployment
         
