@@ -206,10 +206,22 @@ class ChatSystem:
                 "stream": True
             }
             
-            # Add model-specific parameters for O1
+            # Add model-specific parameters
             if model_name == self.o1_deployment:
                 reasoning_effort = st.session_state.get("reasoning_effort", "high")
                 api_params["reasoning_effort"] = reasoning_effort
+                
+                # Add structured output if enabled
+                if self.structured_output_enabled and self.current_schema:
+                    api_params["response_format"] = {
+                        "type": "json_schema",
+                        "schema": self.current_schema
+                    }
+                
+                # Add function calling if enabled
+                if self.function_calling_enabled and self.available_functions:
+                    api_params["tools"] = self.get_function_definitions()
+                    api_params["tool_choice"] = "auto"
 
             response = self.client.chat.completions.create(**api_params)
             return response
